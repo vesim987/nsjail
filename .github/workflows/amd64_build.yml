@@ -1,0 +1,40 @@
+name: Docker
+
+on:
+  push:
+    branches:
+      - master
+      - cmake
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: submodule checkout
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --force --recursive --depth=1
+      - name: Download toolchain
+        run: curl --fail -v -L -u "octocat:${{ secrets.GITHUB_TOKEN }}" -o toolchain.zip $(curl -sL $(curl -sL https://api.github.com/repos/vesim987/nsjail-toolchains/actions/workflows/1606907/runs | jq -r '.workflow_runs[0].artifacts_url') | jq -r '.artifacts[0].archive_download_url')
+      - name: Unpacking toolchain
+        run: unzip toolchain.zip && tar xvf x86_64-buildroot-linux-gnu_sdk-buildroot.tar.gz
+      - name: Relocating toolchain
+        run: cd x86_64-buildroot-linux-gnu_sdk-buildroot; ./relocate-sdk.sh
+      - name: ls
+        run: ls
+      - name: configure
+        run: mkdir build; cd build; $PWD/../x86_64-buildroot-linux-gnu_sdk-buildroot/bin/cmake -DCMAKE_TOOLCHAIN_FILE=$PWD/../x86_64-buildroot-linux-gnu_sdk-buildroot/share/buildroot/toolchainfile.cmake -DCMAKE_MAKE_PROGRAM=$PWD/../x86_64-buildroot-linux-gnu_sdk-buildroot/bin/host-make ..
+      - name: workaround
+        run: |
+          cd build/kafel
+          $PWD/../../x86_64-buildroot-linux-gnu_sdk-buildroot/bin/flex ../../kafel/src/lexer.l
+          $PWD/../../x86_64-buildroot-linux-gnu_sdk-buildroot/bin/bison ../../kafel/src/parser.y
+      - name: build
+        run: cd build; $PWD/../x86_64-buildroot-linux-gnu_sdk-buildroot/bin/host-make VERBOSE=1 -j3
+      - name: Archive nsjail
+        uses: actions/upload-artifact@v1
+        with:
+          name: nsjail
+          path: build/nsjail
